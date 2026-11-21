@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Energizer: Sembilan Titik, Empat Garis</title>
+<style>
+:root {
+  box-sizing: border-box;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  --bg: #ffffff; --fg: #1d2433; --muted: #5b6577; --card: #f3f6fb; --line: #c9d2e0;
+  --target: #e8590c; --lattice: #aab4c5; --ok: #2b8a3e; --warn: #b45309;
+  --l1: #1c7ed6; --l2: #2b8a3e; --l3: #9c36b5; --l4: #d9480f; --lx: #868e96;
+  --btn: #1c7ed6; --btnfg: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14171f; --fg: #eef1f7; --muted: #a3adc0; --card: #1e2330; --line: #3a4256;
+    --target: #ff922b; --lattice: #566077; --ok: #69db7c; --warn: #fcc419;
+    --l1: #74c0fc; --l2: #8ce99a; --l3: #e599f7; --l4: #ffa94d; --lx: #adb5bd;
+    --btn: #4dabf7; --btnfg: #0b1220;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #14171f; --fg: #eef1f7; --muted: #a3adc0; --card: #1e2330; --line: #3a4256;
+  --target: #ff922b; --lattice: #566077; --ok: #69db7c; --warn: #fcc419;
+  --l1: #74c0fc; --l2: #8ce99a; --l3: #e599f7; --l4: #ffa94d; --lx: #adb5bd;
+  --btn: #4dabf7; --btnfg: #0b1220;
+}
+html, body { height: 100%; margin: 0; background: var(--bg); color: var(--fg); font-family: Arial, Helvetica, sans-serif; }
+body { display: flex; flex-direction: column; align-items: center; padding: 16px; box-sizing: border-box; }
+h1 { font-size: clamp(22px, 3.4vw, 40px); margin: 4px 0 6px; text-align: center; }
+p.sub { margin: 0 0 10px; color: var(--muted); font-size: clamp(14px, 1.7vw, 22px); text-align: center; max-width: 900px; }
+.wrap { display: flex; flex-wrap: wrap; gap: 20px; justify-content: center; align-items: flex-start; width: 100%; max-width: 1200px; }
+.board { flex: 1 1 380px; max-width: 640px; background: var(--card); border: 2px solid var(--line); border-radius: 16px; padding: 8px; }
+svg { width: 100%; height: auto; display: block; touch-action: manipulation; }
+.panel { flex: 1 1 280px; max-width: 420px; display: flex; flex-direction: column; gap: 12px; }
+.stat { background: var(--card); border: 2px solid var(--line); border-radius: 14px; padding: 12px 16px; font-size: clamp(18px, 2.2vw, 28px); }
+.stat b { font-size: 1.3em; }
+.msg { min-height: 3.2em; font-size: clamp(16px, 1.9vw, 24px); line-height: 1.35; }
+.msg.ok { color: var(--ok); font-weight: bold; }
+.msg.warn { color: var(--warn); }
+.btns { display: flex; flex-wrap: wrap; gap: 10px; }
+button { font: inherit; font-size: clamp(16px, 1.9vw, 24px); padding: 12px 18px; border: 0; border-radius: 12px; background: var(--btn); color: var(--btnfg); cursor: pointer; min-height: 52px; }
+button.alt { background: transparent; color: var(--fg); border: 2px solid var(--line); }
+button:focus-visible { outline: 3px solid var(--target); outline-offset: 2px; }
+.hit { fill: transparent; cursor: pointer; }
+</style>
+</head>
+<body>
+<h1>Sembilan Titik, Empat Garis</h1>
+<p class="sub">Ketuk titik-titik secara berurutan untuk menarik garis lurus tanpa mengangkat pensil. Hubungkan kesembilan titik oranye dengan hanya 4 garis.</p>
+
+<div class="wrap">
+  <div class="board">
+    <svg id="svg" viewBox="0 0 600 600" role="img" aria-label="Papan sembilan titik"></svg>
+  </div>
+  <div class="panel">
+    <div class="stat">Garis: <b id="nLines">0</b> / 4</div>
+    <div class="stat">Titik terlewati: <b id="nDots">0</b> / 9</div>
+    <div class="msg" id="msg">Mulai dengan mengetuk satu titik.</div>
+    <div class="btns">
+      <button id="undo" class="alt">Urungkan</button>
+      <button id="reset" class="alt">Ulangi</button>
+      <button id="hint">Petunjuk</button>
+      <button id="answer" class="alt">Jawaban</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var NS = 'http://www.w3.org/2000/svg';
+  var svg = document.getElementById('svg');
+  var X0 = 80, Y0 = 520, STEP = 110;
+  var COLORS = ['var(--l1)', 'var(--l2)', 'var(--l3)', 'var(--l4)', 'var(--lx)'];
+  var SOL = [[1,3],[4,3],[1,0],[1,3],[3,1]];
+  var targets = [];
+  for (var x = 1; x <= 3; x++) for (var y = 1; y <= 3; y++) targets.push([x, y]);
+
+  var path = [];
+  var hintCount = 0;
+
+  function px(x) { return X0 + x * STEP; }
+  function py(y) { return Y0 - y * STEP; }
+  function el(name, attrs) {
+    var e = document.createElementNS(NS, name);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    return e;
+  }
+  function isTarget(x, y) { return x >= 1 && x <= 3 && y >= 1 && y <= 3; }
+
+  function onSegment(p, a, b) {
+    var cross = (b[0]-a[0])*(p[1]-a[1]) - (b[1]-a[1])*(p[0]-a[0]);
+    if (cross !== 0) return false;
+    return p[0] >= Math.min(a[0], b[0]) && p[0] <= Math.max(a[0], b[0]) &&
+           p[1] >= Math.min(a[1], b[1]) && p[1] <= Math.max(a[1], b[1]);
+  }
+  function covered() {
+    var n = 0;
+    targets.forEach(function (t) {
+      if (path.length === 1 && path[0][0] === t[0] && path[0][1] === t[1]) { n++; return; }
+      for (var i = 0; i < path.length - 1; i++) {
+        if (onSegment(t, path[i], path[i+1])) { n++; return; }
+      }
+    });
+    return n;
+  }
+
+  function draw() {
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    var lines = Math.max(0, path.length - 1);
+
+    // segments
+    for (var i = 0; i < lines; i++) {
+      svg.appendChild(el('line', {
+        x1: px(path[i][0]), y1: py(path[i][1]), x2: px(path[i+1][0]), y2: py(path[i+1][1]),
+        stroke: COLORS[Math.min(i, 4)], 'stroke-width': 9, 'stroke-linecap': 'round', opacity: 0.9
+      }));
+    }
+    // lattice and targets
+    for (var gx = 0; gx <= 4; gx++) {
+      for (var gy = 0; gy <= 4; gy++) {
+        var t = isTarget(gx, gy);
+        svg.appendChild(el('circle', {
+          cx: px(gx), cy: py(gy), r: t ? 17 : 6,
+          fill: t ? 'var(--target)' : 'var(--lattice)',
+          stroke: t ? 'var(--bg)' : 'none', 'stroke-width': 4
+        }));
+      }
+    }
+    // current end marker
+    if (path.length) {
+      var last = path[path.length - 1];
+      svg.appendChild(el('circle', { cx: px(last[0]), cy: py(last[1]), r: 24, fill: 'none', stroke: 'var(--fg)', 'stroke-width': 4, 'stroke-dasharray': '6 5' }));
+    }
+    // hit areas
+    for (var hx = 0; hx <= 4; hx++) {
+      for (var hy = 0; hy <= 4; hy++) {
+        (function (a, b) {
+          var h = el('circle', { cx: px(a), cy: py(b), r: 38, class: 'hit' });
+          h.addEventListener('click', function () { tap(a, b); });
+          svg.appendChild(h);
+        })(hx, hy);
+      }
+    }
+    update(lines);
+  }
+
+  function update(lines) {
+    var c = covered();
+    document.getElementById('nLines').textContent = lines;
+    document.getElementById('nDots').textContent = c;
+    var m = document.getElementById('msg');
+    m.className = 'msg';
+    if (c === 9 && lines <= 4) {
+      m.className = 'msg ok';
+      m.textContent = 'Berhasil! Sembilan titik terhubung dengan ' + lines + ' garis. Garis boleh keluar dari kotak.';
+    } else if (c === 9) {
+      m.className = 'msg warn';
+      m.textContent = 'Sembilan titik sudah terhubung, tetapi memakai ' + lines + ' garis. Coba lagi dengan 4 garis.';
+    } else if (lines > 4) {
+      m.className = 'msg warn';
+      m.textContent = 'Garis sudah lebih dari 4. Tekan Urungkan atau Ulangi.';
+    } else if (path.length === 0) {
+      m.textContent = 'Mulai dengan mengetuk satu titik.';
+    } else {
+      m.textContent = 'Ketuk titik berikutnya. Titik abu-abu di luar kotak boleh dipakai.';
+    }
+  }
+
+  function tap(x, y) {
+    var last = path[path.length - 1];
+    if (last && last[0] === x && last[1] === y) return;
+    path.push([x, y]);
+    hintCount = 0;
+    draw();
+  }
+
+  document.getElementById('undo').addEventListener('click', function () { path.pop(); hintCount = 0; draw(); });
+  document.getElementById('reset').addEventListener('click', function () { path = []; hintCount = 0; draw(); });
+  document.getElementById('hint').addEventListener('click', function () {
+    hintCount = Math.min(hintCount + 1, 4);
+    path = SOL.slice(0, hintCount + 1).map(function (p) { return p.slice(); });
+    draw();
+    if (hintCount < 4) {
+      var m = document.getElementById('msg');
+      m.className = 'msg';
+      m.textContent = 'Petunjuk ' + hintCount + ': garis ke-' + hintCount + ' ditampilkan. Tekan Petunjuk lagi untuk garis berikutnya.';
+    }
+  });
+  document.getElementById('answer').addEventListener('click', function () {
+    hintCount = 4;
+    path = SOL.map(function (p) { return p.slice(); });
+    draw();
+  });
+
+  draw();
+})();
+</script>
+</body>
+</html>
